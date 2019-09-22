@@ -1,0 +1,22 @@
+#ifndef SWARM_H
+#define SWARM_H
+#include"Particle.h"
+class Swarm
+{
+public:
+	const static int NPARTICLES = 8000;  // Set a constant number of particles
+
+private:// Instance member variables 'prefixed with an ' m_',
+	Particle* m_pParticle;
+	int  m_lastTime; // Create a variable to hold the the amount of time the loop has taken
+
+public:
+
+	Swarm();
+	virtual ~Swarm();
+	void update(int elapsed);
+
+	const Particle* const getParticle() { return m_pParticle; };
+
+};
+#endif // SWARM_H

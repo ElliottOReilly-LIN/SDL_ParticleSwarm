@@ -1,0 +1,167 @@
+#include "Screen.h"
+//Screen::Screen() {
+//this->m_window = NULL;
+//this->m_renderer = NULL;
+//this->m_buffer1 = NULL;
+//this->m_buffer2 = NULL;
+//}
+
+ // This is exactly the same as above ^^ with a constructor  initialisation list of the pointer variables
+ // **Remember, the value in the brackets is just that, in this case it's assigning NULL to the variables, even though it LOOKS like a function call. It's NOT!
+Screen::Screen() : m_window(NULL), m_renderer(NULL), m_texture(NULL), m_buffer1(NULL), m_buffer2(NULL) {}
+ // By setting these to 'NULL' (which is the same as '0' ) we are basically saying that these pointers are pointing to nothing!
+
+bool Screen::init() {
+
+	if (SDL_Init(SDL_INIT_VIDEO) < 0) {  // This function  initialises  the SDL library , in this case the VIDEO subset
+		return false;
+	}
+
+	m_window = SDL_CreateWindow("Particle Fire Explosion", // Create the actual window with the dimensions and position specified and set it equal to the' m_ window pointer
+		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+		SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+
+	if (m_window == NULL) {
+		SDL_Quit();
+		return false;
+	}
+    // Begin the process of setting up the renderer and texture
+
+	// We have a window we now need a 'renderer' to draw on the 'Window'
+	m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_PRESENTVSYNC);//We want to render to the screen in sync with the refresh rate
+
+	// We also need a 'texture', which is basically a bit map which we can draw directly to.
+	m_texture = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_RGBA8888,// 4bytes per pixel to correspond with Uint32
+		SDL_TEXTUREACCESS_STATIC, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+	if (m_renderer == NULL) {  // This  is a safeguard  in case the renderer could not be created
+		SDL_DestroyWindow(m_window);
+		SDL_Quit();
+		return false;
+	}
+
+	if (m_texture == NULL) { // This  is a safeguard  in case ta texture could not be created
+		SDL_DestroyRenderer(m_renderer);
+		SDL_DestroyWindow(m_window);
+		SDL_Quit();
+		return false;
+	}
+
+    //  These lines to create buffers, which are dedicated to getting / setting up memory space directly related to pixels
+	m_buffer1 = new Uint32[SCREEN_WIDTH * SCREEN_HEIGHT];// Allocate enough memory for 4bytes per pixel to correspond with Uint32.
+	m_buffer2 = new Uint32[SCREEN_WIDTH * SCREEN_HEIGHT]; // After all the screen size is just an array of pixels
+
+
+	//************ Learn this *************// Writing some pixel information from the buffer..Setting all the cells the pixel buffer
+	memset(m_buffer1, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(Uint32));
+	memset(m_buffer2, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(Uint32));
+	// A function to quickly allocate a memory block and fill every byte with the int value..in this case 255 for white or 0xFF
+
+	return true;
+}
+void Screen::boxBlur() { //  his function calls 'box blur' responsible for prettifying the pixels with fade in/out
+	// buffer1 holds the pixels to be drawn to the screen so we need to swap the pointers buffer2 will point at where buffer1 originally pointed at
+	// Swap the buffers, so pixel is in m_buffer2 and we are drawing to m_buffer1
+	Uint32* temp = m_buffer1; //
+	m_buffer1 = m_buffer2;
+	m_buffer2 = temp;
+
+	for (int y = 0; y < SCREEN_HEIGHT; y++) {
+		for (int x = 0; x < SCREEN_WIDTH; x++) {
+			/*
+                                                  -1    0  +1
+                                        -1        0    0    0
+                                         0        0    1    0       // We will end up dividing the colour pixel by nine, so that it ends up as an average of all the surrounding pixels
+										+1       0    0    0       // we plot the result back into the centre pixel, this is what creates the 'box blur' effect
+			*/
+			int redTotal = 0;
+			int greenTotal = 0;
+			int blueTotal = 0;
+
+			for (int row = -1; row <= 1; row++) { // Iterate over all the surrounding pixels(including centre)
+				for (int col = -1; col<= 1; col++) {
+					int currentX = x + col;
+					int currentY = y + row;
+
+					if (currentX >= 0 && currentX < SCREEN_WIDTH && currentY >= 0 && currentY < SCREEN_HEIGHT) {
+						Uint32 color = m_buffer2[currentY * SCREEN_WIDTH + currentX];
+
+						Uint8 red = color >> 24; // BitWise shift
+						Uint8 green = color >> 16; // BitWise shift
+						Uint8 blue = color >> 8; // BitWise shift
+
+						redTotal += red; // We add up all the values of the current pixels
+						greenTotal += green;
+						blueTotal += blue;
+					}
+				}
+			}
+            // We will end up dividing the colour pixel by nine, so that it ends up as an average of all the surrounding pixels
+			Uint8 red = redTotal / 9;
+			Uint8 green = greenTotal / 9;
+			Uint8 blue = blueTotal / 9;
+
+			setPixel(x, y, red, green, blue); //  Remember, this function writes to buffer1, but we have copied the last set of pixel data to buffer2,
+                                                                        // each time we iterate through the game loop in 'main.cpp' we will plot the new 'box blur' effect on it
+                                                                        // so it will get more and more blurred after every loop
+		}
+	}
+}
+
+void Screen::update() {
+
+	SDL_UpdateTexture(m_texture, NULL, m_buffer1, SCREEN_WIDTH * sizeof(Uint32));
+	SDL_RenderClear(m_renderer);
+	SDL_RenderCopy(m_renderer, m_texture, NULL, NULL);
+	SDL_RenderPresent(m_renderer);
+
+}
+//Plots the results on the screen
+void Screen::setPixel(int x, int y, Uint8 red, Uint8 green, Uint8 blue) {
+	// Ensure a pixel is not drawn outside of the screen dimensions inefficient for now!
+	if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) {
+		return;
+	}
+
+	Uint32 colour = 0;
+
+	colour += red;
+	colour <<= 8; // Bitwise shift of 8 bits
+	colour += green;
+	colour <<= 8; // Bitwise shift of 8 bits
+	colour += blue;
+	colour <<= 8; // Bitwise shift of 8 bits
+	colour += 0xFF; // Alpha byte of RGBA = opaque
+
+	m_buffer1[(y * SCREEN_WIDTH) + x] = colour;
+	// Remember, the buffer represents the whole screen
+	// of pixels, going from left to right, row after row
+
+}
+bool Screen::processEvents() {
+	// Check for messages/events
+	SDL_Event event; // event being the member variable
+
+	while (SDL_PollEvent(&event)) {
+		if (event.type == SDL_QUIT) {//If for instance if the 'X' is clicked at the top of the window to close
+			return false;
+		}
+	}
+	return true;;
+}
+
+void Screen::close() {
+	// Begin the process of cleaning up and freeing up all the resources and memory
+
+	delete[] m_buffer1; //Free up memory from the screen buffer by destroying the pointer array
+	delete[] m_buffer2;
+	SDL_DestroyRenderer(m_renderer);
+	SDL_DestroyTexture(m_texture);
+	SDL_DestroyWindow(m_window);
+	SDL_Quit();
+
+}
+
+Screen::~Screen() {
+
+}
